@@ -1,0 +1,23 @@
+index=appindex_prod_na AND sourcetype=syslog "contract-status-service" NOT "/monitoringevent" 
+| rex field=_raw "\s(?<apic_log_message>{.*)" 
+| spath input=apic_log_message output=status_code_str path=status_code 
+| spath input=apic_log_message output=product_name path=product_name 
+| search product_name="contract-status-service" 
+| eval status_code_tmp=substr(status_code_str,1,3)
+| convert num(status_code_tmp) AS status_code 
+| eval is500error=floor(status_code/500)
+| autoregress is500error 
+| eval sameAsNext=if((is500error=is500error_p1) OR isnull(is500error_p1) ,1,0)
+| streamstats current=t count(eval(sameAsNext=0)) AS tmp_groupID 
+| eventstats count AS inArowCount BY tmp_groupID 
+| stats min(_time) AS start, max(_time) AS end, max(inArowCount) AS howManyOfSameInARow latest(status_code) AS statuses BY tmp_groupID
+| eval severity=case(statuses>=500, "WARNING", statuses<500, "CLEAR",1=1,"CLEAR")
+| eval lengthOfSituation=end-start
+| eval shouldThisTriggerAnEvent=case(lengthOfSituation>=60 AND severity="WARNING" AND howManyOfSameInARow>=10,"YES",
+lengthOfSituation<60 AND severity="WARNING" AND howManyOfSameInARow>=10,"YES",severity="CLEAR","YES",
+lengthOfSituation<60 AND severity="WARNING" AND howManyOfSameInARow>=10,"NO",1=1,"NO"),
+start_time=strftime(start,"%Y-%m-%d %H:%M:%S"), end_time=strftime(end,"%Y-%m-%d %H:%M:%S")
+| eval product_name="CSS"
+| sort start
+| where shouldThisTriggerAnEvent=="YES" AND severity=="WARNING"
+| table product_name, start_time, end_time, howManyOfSameInARow, lengthOfSituation
