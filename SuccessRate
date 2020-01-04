@@ -1,0 +1,11 @@
+index=appindex_prod_na NOT "/monitoringevent"
+| rex field=_raw "\"status_code\"\:\"(?<status_code>[\d]+)"
+| rex field=_raw "\"product_name\"\:\"(?<product_name>[\w\-]+)\""
+| where product_name="contract-status-service" OR product_name="customer-status-service"
+| eval status_code_tmp=substr(status_code,-3) 
+| convert num(status_code_tmp) AS status_code 
+| eval is500error=floor(status_code/500)
+| eval date=strftime(_time,"%Y-%m-%d")
+| stats count AS cnt_all_req, count(eval(is500error=1)) AS cnt_500_err BY product_name, date
+| sort product_name, date
+| eval success_rate_percent=round((cnt_all_req-cnt_500_err)/cnt_all_req*100, 2), error_rate_percent=round(cnt_500_err/cnt_all_req*100, 2)
