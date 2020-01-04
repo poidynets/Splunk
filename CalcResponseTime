@@ -1,0 +1,9 @@
+index=appindex_prod_na NOT "/monitoringevent" NOT httpCode>=500
+| rex field=_raw "\"product_name\"\:\"(?<product_name>[\w\-]+)\""
+| rex field=_raw "\"time_to_serve_request\"\:(?<time_to_serve_request>[\d]+)\,"
+| search product_name="contract-status-service" OR product_name="customer-status-service"
+| eval date=strftime(_time,"%Y-%m-%d")
+| stats count AS reqest_count, avg(time_to_serve_request) AS avg_time_to_serve_the_request BY product_name, date
+| eval avg_time_to_serve_the_request=round(avg_time_to_serve_the_request,0)
+| eval app_name="Contract/Customer"
+| table app_name, date, product_name, reqest_count, avg_time_to_serve_the_request
